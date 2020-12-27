@@ -48,7 +48,7 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
 
         val action = updateUser >> deleteRoles >> insertRoles >> DBIO.successful(())
 
-        db.run(action)
+        db.run(action.transactionally)
       case None => Future.successful(())
     }
   }
@@ -61,13 +61,39 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
     })
   }
 
-  private def findByCondition(condition: Users => Rep[Boolean]): Future[Vector[User]] = ???
+  private def findByCondition(condition: Users => Rep[Boolean]): Future[Vector[User]] = {
+    val joinQuery = for {
+      (user, userRoles) <- users
+        .filter(condition)
+        .joinLeft(usersToRoles).on(_.id === _.usersId)
+    } yield (user, userRoles.map(_.rolesCode)) // деалем join с ролями добавляя в выборку поле с кодом роли
 
-  def findByLastName(lastName: String): Future[Seq[User]] = ???
+    val result = for {
+      res <- joinQuery.result
+    } yield res
+      .groupBy(_._1) // результат join группируем по юзерам
+      .map({ // сразу в User кладем Set[Role] полученный в результате группировки
+        case (user, rowsGrouped) => user.toUser(rowsGrouped.flatMap(_._2.toSet).toSet)
+      })
+      .toVector
 
-  def findAll(): Future[Seq[User]] = ???
+    db.run(result)
+  }
 
-  private[slick] def deleteAll(): Future[Unit] = ???
+  def findByLastName(lastName: String): Future[Seq[User]] = {
+    findByCondition(_.lastName === lastName)
+  }
+
+  def findAll(): Future[Seq[User]] = findByCondition(_ => true)
+
+  private[slick] def deleteAll(): Future[Unit] = {
+
+    val action = for {
+      _ <- usersToRoles.delete
+      _ <- users.delete
+    } yield ()
+    db.run(action)
+  }
 }
 
 object UserDaoSlickImpl {
