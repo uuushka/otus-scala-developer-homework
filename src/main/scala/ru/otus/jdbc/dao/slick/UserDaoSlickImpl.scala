@@ -3,9 +3,7 @@ package ru.otus.jdbc.dao.slick
 
 
 import ru.otus.jdbc.model.{Role, User}
-import slick.dbio.Effect
 import slick.jdbc.PostgresProfile.api._
-import slick.sql.FixedSqlAction
 
 import java.util.UUID
 import scala.concurrent.{ExecutionContext, Future}
@@ -25,7 +23,17 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
     db.run(res)
   }
 
-  def createUser(user: User): Future[User] = ???
+  def createUser(user: User): Future[User] = {
+    val userForInsert = UserRow.fromUser(user)
+    val insertUserAction = (users returning users.map(_.id)) += userForInsert
+    val insertRolesAction = (userId:UUID) => usersToRoles ++= user.roles.map(userId -> _)
+    val insertAction = for {
+      createdUserId <- insertUserAction
+      _ <- insertRolesAction(createdUserId)
+      createdUser = userForInsert.copy(id=Some(createdUserId)).toUser(user.roles)
+     } yield createdUser
+    db.run(insertAction.transactionally)
+  }
 
   def updateUser(user: User): Future[Unit] = {
     user.id match {
@@ -45,7 +53,13 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
     }
   }
 
-  def deleteUser(userId: UUID): Future[Option[User]] = ???
+  def deleteUser(userId: UUID): Future[Option[User]] = {
+    getUser(userId).flatMap(u => {
+      val deleteUserAction = users.filter(_.id === userId).delete
+      val deleteUserRolesAction = usersToRoles.filter(_.usersId === userId).delete
+      db.run(deleteUserRolesAction >> deleteUserAction >> DBIO.successful(u))
+    })
+  }
 
   private def findByCondition(condition: Users => Rep[Boolean]): Future[Vector[User]] = ???
 
