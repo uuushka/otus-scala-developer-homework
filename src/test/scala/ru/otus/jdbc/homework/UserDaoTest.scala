@@ -51,6 +51,15 @@ class UserDaoSlickImplTest extends AnyFreeSpec
 
   implicit val arbitraryUser: Arbitrary[User] = Arbitrary(genUser)
 
+  "findAll" in {
+    forAll { users: Seq[User] =>
+      val dao = new UserDaoSlickImpl(db)
+      val createdUsers = users.map(dao.createUser(_).futureValue)
+      dao.findAll().futureValue.toSet shouldBe createdUsers.toSet
+      dao.deleteAll()
+    }
+  }
+
     "getUser" - {
       "create and get unknown user" in {
         forAll { (users: Seq[User], userId: UUID) =>
@@ -58,6 +67,7 @@ class UserDaoSlickImplTest extends AnyFreeSpec
           users .foreach(dao.createUser(_).futureValue)
 
           dao.getUser(userId).futureValue shouldBe None
+          dao.deleteAll()
         }
       }
     }
@@ -71,11 +81,11 @@ class UserDaoSlickImplTest extends AnyFreeSpec
           val createdUser = dao.createUser(user1).futureValue
           val toUpdate = user2.copy(id = createdUser.id)
 
-          dao.updateUser(toUpdate)
+          dao.updateUser(toUpdate).futureValue
 
           dao.getUser(toUpdate.id.get).futureValue shouldBe Some(toUpdate)
-          createdUsers.foreach { u => dao.getUser(u.id.get).futureValue shouldBe Some(u)
-          }
+          createdUsers.foreach { u => dao.getUser(u.id.get).futureValue shouldBe Some(u)}
+          dao.deleteAll()
         }
       }
     }
@@ -91,6 +101,7 @@ class UserDaoSlickImplTest extends AnyFreeSpec
         dao.getUser(createdUser.id.get).futureValue shouldBe None
 
         createdUsers1.foreach { u => dao.getUser(u.id.get).futureValue shouldBe Some(u)}
+        dao.deleteAll()
       }
     }
 
@@ -105,17 +116,12 @@ class UserDaoSlickImplTest extends AnyFreeSpec
             val createdWithLasName = withLastName.map(dao.createUser(_).futureValue)
 
             dao.findByLastName(lastName).futureValue.toSet shouldBe createdWithLasName.toSet
+            dao.deleteAll()
           }
         }
 
-    "findAll" in {
-      forAll { users: Seq[User] =>
-        val dao = new UserDaoSlickImpl(db)
-        val createdUsers = users.map(dao.createUser(_).futureValue)
 
-        dao.findAll().futureValue.toSet shouldBe createdUsers.toSet
-      }
-    }
+
 
 
 

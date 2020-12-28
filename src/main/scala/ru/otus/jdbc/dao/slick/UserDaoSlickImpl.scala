@@ -38,18 +38,28 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
   def updateUser(user: User): Future[Unit] = {
     user.id match {
       case Some(userId) =>
-        val updateUser = users
-            .filter(_.id === userId)
-            .map(u => (u.firstName, u.lastName, u.age))
-            .update((user.firstName, user.lastName, user.age))
-
-        val deleteRoles = usersToRoles.filter(_.usersId === userId).delete
-        val insertRoles = usersToRoles ++= user.roles.map(userId -> _)
-
-        val action = updateUser >> deleteRoles >> insertRoles >> DBIO.successful(())
-
-        db.run(action.transactionally)
-      case None => Future.successful(())
+        val query = users.filter(_.id === userId)
+        val existsAction = query.exists.result
+        val insertOrUpdateAction = existsAction.flatMap {
+          case true => {
+            val updateUser = users
+              .filter(_.id === userId)
+              .map(u => (u.firstName, u.lastName, u.age))
+              .update((user.firstName, user.lastName, user.age))
+            val deleteRoles = usersToRoles.filter(_.usersId === userId).delete
+            val insertRoles = usersToRoles ++= user.roles.map(userId -> _)
+            updateUser >> deleteRoles >> insertRoles >> DBIO.successful(())
+          }
+          case false => {
+            createUser(user)
+            DBIO.successful(())
+          }
+        }
+        db.run(insertOrUpdateAction.transactionally)
+      case None => {
+        createUser(user)
+        Future.successful(())
+      }
     }
   }
 
@@ -86,13 +96,13 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
 
   def findAll(): Future[Seq[User]] = findByCondition(_ => true)
 
-  private[slick] def deleteAll(): Future[Unit] = {
+  def deleteAll(): Future[Unit] = {
 
     val action = for {
       _ <- usersToRoles.delete
       _ <- users.delete
     } yield ()
-    db.run(action)
+    db.run(action.transactionally)
   }
 }
 
