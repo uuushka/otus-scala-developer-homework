@@ -67,11 +67,13 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
   }
 
   def deleteUser(userId: UUID): Future[Option[User]] = {
-    getUser(userId).flatMap(u => {
-      val deleteUserAction = users.filter(_.id === userId).delete
-      val deleteUserRolesAction = usersToRoles.filter(_.usersId === userId).delete
-      db.run(deleteUserRolesAction >> deleteUserAction >> DBIO.successful(u))
-    })
+    getUser(userId).flatMap {
+      case Some(user) =>
+        val deleteUserAction = users.filter(_.id === userId).delete
+        val deleteUserRolesAction = usersToRoles.filter(_.usersId === userId).delete
+        db.run(deleteUserRolesAction >> deleteUserAction >> DBIO.successful(Some(user)))
+      case None => Future.successful(None)
+    }
   }
 
   private def findByCondition(condition: Users => Rep[Boolean]): Future[Vector[User]] = {
@@ -99,7 +101,7 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
 
   def findAll(): Future[Seq[User]] = findByCondition(_ => true)
 
-  def deleteAll(): Future[Unit] = {
+  private[jdbc] def deleteAll(): Future[Unit] = {
 
     val action = for {
       _ <- usersToRoles.delete
