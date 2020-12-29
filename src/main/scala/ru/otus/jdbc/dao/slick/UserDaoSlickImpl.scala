@@ -39,9 +39,12 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
     user.id match {
       case Some(userId) =>
         val query = users.filter(_.id === userId)
-        val existsAction = query.exists.result
+        // я сделал без использования getUser:
+        // 1. чтобы лишний раз не лезть в users_to_roles
+        // 2. для практики других запросов и вариантов
+        val existsAction = query.exists.result // есть ли юзер с таким id
         val insertOrUpdateAction = existsAction.flatMap {
-          case true => {
+          case true => { // если да, то делаем update и обновление ролей
             val updateUser = users
               .filter(_.id === userId)
               .map(u => (u.firstName, u.lastName, u.age))
@@ -50,7 +53,7 @@ class UserDaoSlickImpl(db: Database)(implicit ec: ExecutionContext) {
             val insertRoles = usersToRoles ++= user.roles.map(userId -> _)
             updateUser >> deleteRoles >> insertRoles >> DBIO.successful(())
           }
-          case false => {
+          case false => { // иначе создаем юзера
             createUser(user)
             DBIO.successful(())
           }
